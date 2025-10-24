@@ -1,0 +1,292 @@
+def umap_prep(animal, date, ks_path, res_path, csv_path):
+
+    # load spikes and behav periods
+    goodspiketimes = oe.ks_load(ks_path)
+
+    # load behav periods
+    res_path_path = Path(res_path)
+    with open(Path(res_path) / f"preprocessing/behav_periods_{animal}_{date}.pkl", "rb") as f:
+        periods = pickle.load(f)  
+
+    # load csv
+    csv_dict = motive.get_csv_dict(csv_path)
+    with open(Path(f'{res_path}/preprocessing') / f"meta_{date}.pkl", "rb") as f:
+        meta = pickle.load(f)
+
+    # list of keys for different behavioral periods
+    all_keys = list(periods.keys())
+    of_keys = [k for k in periods.keys() if "of" in k]
+    sl_keys = [k for k in periods.keys() if "sl" in k]
+
+
+    
+    # accumarray
+    accumarray_path = Path(res_path) / f"pa/accumarray4umap_{date}.pkl"
+    if not os.path.exists(accumarray_path):
+        print('running accumarray... will take time so chill & be patient')
+        spike_matrix = {}
+        bin_centers_sec = {}
+        cell_ids = {}
+
+        for p in all_keys:
+            spike_matrix[p], bin_centers_sec[p], cell_ids[p] = utils.accumarray(spikes_by_periods[p])
+    
+        accumarray4umap = {}
+        accumarray4umap['spike_matrix'] = spike_matrix
+        accumarray4umap['bin_centers_sec'] = bin_centers_sec
+        accumarray4umap['cell_ids'] = cell_ids
+
+        with open(accumarray_path, "wb") as f:
+            pickle.dump(accumarray4umap, f)     
+
+    else:
+        with open(accumarray_path, "rb") as f:
+            accumarray4umap = pickle.load(f)
+        spike_matrix = accumarray4umap['spike_matrix']
+        bin_centers_sec = accumarray4umap['bin_centers_sec']
+        cell_ids = accumarray4umap['cell_ids']      
+
+    # positional data
+    pos_data_interp = {}
+    frame_times_all = {}
+
+    for k in meta.keys():
+        df = csv_dict[meta[k]]
+        frame_times_all[k] = motive.get_frame_times(df)
+        _, arrays_interpol = motive.get_arrays(df, metric='Position', dim_array = ['X','Y','Z'], interpolate=True)
+        pos_data_interp[k]=arrays_interpol
+
+    with open(Path(res_path) / "preprocessing" / f"smooth_pitch_dict_{date}.pkl", "rb") as f:
+        smooth_pitch_dict = pickle.load(f)
+
+    fs_pos = 120
+
+    pos_data_resampled = {}
+    pitch_resampled = {}
+
+    for of in of_keys:
+        print(of)
+        pitch_resampled[of] = np.interp(
+                    bin_centers_sec[of], 
+                    np.arange(len(smooth_pitch_dict[of]))/fs_pos, 
+                    smooth_pitch_dict[of]
+                    )*(-1) # here I flip pitch
+        print(pitch_resampled[of].shape)
+        
+        pd_res = {}
+        for dim in pos_data_interp[of].keys():
+            pd_res[dim] = np.interp(
+                bin_centers_sec[of], 
+                np.arange(len(pos_data_interp[of][dim]))/fs_pos, 
+                pos_data_interp[of][dim]
+                )
+            print(pd_res[dim].shape)
+        pos_data_resampled[of] = pd_res
+
+    # speed
+    speeds = {} # already resampled to firing bins
+
+    for of in of_keys:
+        _, _, speed = motive.speed(
+            pos_data_interp[of]['X'], 
+            pos_data_interp[of]['Z'], 
+            frame_times_all[of])
+        
+        print(f'{of}: original {speed.shape}')
+        
+        # resampling of speed bins to match neural bins
+        speeds[of] = np.interp(bin_centers_sec[of], np.arange(len(speed)) / fs_pos, speed)
+        print(f'{of}: resampled {speeds[of].shape} \n')
+
+    # Filter by speed
+    spike_matrix_run = {}
+    pos_data_run = {}
+    pitch_run = {}
+    speeds_run = {}
+
+    y_thresh = 0.15
+    speed_cutoff = 0.02
+
+    for of in of_keys:
+        # mask = speeds[of] > 0.02  # 2 cm/s 
+        mask = (pos_data_resampled[of]['Y'] >= y_thresh) | (speeds[of] > speed_cutoff) # double mask
+
+        spike_matrix_run[of] = spike_matrix[of][:, mask].T  # (n_valid_bins, n_cells)
+        print(spike_matrix_run[of].shape)
+
+        pitch_run[of]= pitch_resampled[of][mask].T
+        print(pitch_run[of].shape)
+
+        speeds_run[of] = speeds[of][mask]
+        print(speeds_run[of].shape)
+
+        # in case u wanna normalise
+        # X = StandardScaler().fit_transform(X)
+        pd = {}
+        for dim in pos_data_resampled[of].keys():
+            pd[dim] = pos_data_resampled[of][dim][mask]
+            print(pd[dim].shape)
+        pos_data_run[of] = pd
+        print()
+
+    return some sort of dictionary that can be used later?
+
+def neuronal_classes()
+    # neuronal classes
+    try:
+        with open(Path(res_path) / f"unit_classes_{date}.pkl", "rb") as f:
+            unit_class_dict = pickle.load(f)
+        
+        all = list(goodspiketimes.keys())
+        pyr = [u for u in uoi if unit_class_dict[u] == "pyr"]
+        inter = [u for u in uoi if unit_class_dict[u] == "int"]
+    except:
+        print('units were not classified')
+
+    return all, pyr, inter
+
+def spikes_awake():
+
+    spikes_by_periods = {}
+
+    for of in of_keys:
+        start, end = periods[of]
+
+        spikes_by_periods[of] = {}
+        for unit in goodspiketimes.keys():
+            spikes = goodspiketimes[unit]
+            spikes_in_trial = spikes[(spikes >= start) & (spikes <= end)] - start
+            spikes_by_periods[of][unit] = spikes_in_trial   
+
+    return spikes_by_periods
+
+def spikes_sleep():
+
+    spikes_by_periods = {}
+
+    for of in sl_keys:
+        start, end = periods[of]
+
+        spikes_by_periods[of] = {}
+        for unit in goodspiketimes.keys():
+            spikes = goodspiketimes[unit]
+            spikes_in_trial = spikes[(spikes >= start) & (spikes <= end)] - start
+            spikes_by_periods[of][unit] = spikes_in_trial   
+
+    return spikes_by_periods  
+
+def X_scaling_denosing(matrices_dict, keys, scale=True, split_by_class=True):
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.decomposition import PCA
+
+    '''
+    adds z-scoring and PCA
+
+    example:
+
+    how to split later:
+    reconstructed = np.split(big_mat, boundaries)
+
+    '''
+    spike_matrices_list = []
+    for key in keys:
+        spike_matrices_list.append(matrices_dict[key])
+
+    X_all = np.vstack(spike_matrices_list) 
+
+    lengths = [m.shape[0] for m in spike_matrices_list]
+    boundaries = np.cumsum(lengths)[:-1] 
+
+    if scale: # z-scoring
+        scaler = StandardScaler()
+        X_all = scaler.fit_transform(X_all) 
+
+    # to reconstruct: reconstructed = np.split(X_all, boundaries)
+    pca_output = {}
+    
+    if split_by_class:
+        
+
+        all, pyr, inter= neuronal_classes()
+
+        mask_pyr = np.isin(all, pyr)
+        mask_inter = np.isin(all, inter)
+
+        X_pyr = X_all[:, mask_pyr]
+        X_inter = X_all[:, mask_inter]
+
+        pca_pyr = PCA(random_state=42)
+        pca_output['pc_pyr'] = pca_pyr.fit_transform(X_pyr)
+        pca_output['exp_var_pyr'] = pca_pyr.explained_variance_ratio_
+
+        pca_inter = PCA(random_state=42)
+        pca_output['pc_inter'] = pca_inter.fit_transform(X_inter)
+        pca_output['exp_var_inter'] = pca_inter.explained_variance_ratio_
+
+        pca_all = PCA(random_state=42)
+        pca_output['pc_all'] = pca_all.fit_transform(X_all)
+        pca_output['exp_var_all'] = pca_all.explained_variance_ratio_
+    else:
+        pca_all = PCA(random_state=42)
+        pca_output['pc_all'] = pca_all.fit_transform(X_all)
+        pca_output['exp_var_all'] = pca_all.explained_variance_ratio_
+
+    pca_output['boundaries'] = boundaries
+
+    return pca_output
+
+def plot_pca_exp_var(evr, save=False, filename=None):
+
+    pca_var_threshold = 0.90     # keep PCs explaining ≥90% variance
+    cum = np.cumsum(evr)
+
+    fig = plt.figure(figsize=(4,3))
+    plt.plot(np.arange(1, len(evr)+1), cum, marker='.', lw=1)
+    plt.axhline(pca_var_threshold, linestyle='--')
+    plt.xlabel('Number of PCs')
+    plt.ylabel('Cum explained var')
+    plt.title(filename)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    if save:
+        plt.savefig(Path(res_path) / "pa" / f"{filename}", dpi=300, bbox_inches='tight')
+    plt.show()    
+
+
+def X_raw(matrices_dict, keys, split_by_class=True):
+    output = {}
+
+    spike_matrices_list = []
+    for key in keys:
+        spike_matrices_list.append(matrices_dict[key])
+
+    output['X_all'] = np.vstack(spike_matrices_list) 
+
+    lengths = [m.shape[0] for m in spike_matrices_list]
+    output['boundaries'] = np.cumsum(lengths)[:-1] 
+
+    if split_by_class:
+        
+        all, pyr, inter= neuronal_classes()
+
+        mask_pyr = np.isin(all, pyr)
+        mask_inter = np.isin(all, inter)
+
+        output['X_pyr'] = output['X_all'][:, mask_pyr]
+        output['X_inter'] = output['X_all'][:, mask_inter]
+
+    return output
+
+def run_umap(X, umap_kwargs, implementation, boundaries=None):
+    '''
+    my normal: umap_kwargs = dict(n_components=2, n_neighbors=15, min_dist=0.1, metric="euclidean", random_state=42)
+    implementation: embed_all, embed_split
+    if embed_all, provide boundaries!
+    '''
+    reducer = umap.UMAP(**umap_kwargs)
+    emb = reducer.fit_transform(X)
+
+    if implementation=='embed_all':
+        return np.split(emb, boundaries)
+    else:
+        return emb

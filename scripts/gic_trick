@@ -1,0 +1,27 @@
+# Here I m collecting nice coding tips cz i dont want to figure out same shit over and over again
+
+## Path handling
+
+**1/ Best**
+```
+from pathlib import Path
+filename = Path(pp_path) / f"smooth_pitch_dict_{date}.pkl"
+```
+- Clean, chainable: Path("a") / "b" / "c.txt"
+
+**2/ 2nd chunky winner**
+```
+import os
+filename = os.path.join(pp_path, f"smooth_pitch_dict_{date}.pkl")
+```
+- Automatically handles slashes (/ on Linux/macOS, \\ on Windows)
+- robust
+- useful if jumping from Windows to Linux 
+
+**3/ retarded (and most used by me in the past)**
+```
+filename = res_path + "/ttl_from_mdat.npy"
+filename = f"{pp_path}/smooth_pitch_dict_{date}.pkl"
+```
+- if you forget a /, or if res_path ends with / --> u re fuked
+
