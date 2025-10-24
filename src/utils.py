@@ -5,23 +5,16 @@ from pathlib import Path
 import os
 import pickle
 import sys
-sys.path.append('/storage3/eva/code/remapping/src')
+sys.path.append('/storage3/eva/teaching/motive/code/src')
 
-def path_load(date, animal,p=True):
-    """
-    returns dat_path, ks_path, csv_path, res_path
-    """
+def path_load(date, animal, exp, student, p=True):
 
-    dat_path = f'/storage3/eva/data/raw/oe/{animal}/{animal}_{date}/continuous.dat'
-    ks_path = f'/storage3/eva/data/processed/{animal}/{animal}_{date}/kilosort'
-    csv_path = f'/storage3/eva/data/processed/{animal}/{animal}_{date}/motive/out_csv'
-    res_path = f'/storage3/eva/code/neuropixels/results/{animal}/{animal}_{date}'
+    ks_path = f'/storage3/eva/data/processed/{animal}/{exp}/{animal}_{date}/kilosort'
+    csv_path = f'/storage3/eva/data/processed/{animal}/{exp}/{animal}_{date}/motive/out_csv'
+    res_path = f'/storage3/eva/teaching/motive/students/{student}/res'
+    utils_path = f'/storage3/eva/code/neuropixels/results/{animal}/{exp}/{animal}_{date}'
 
-    if p==True:
-        print('Ola! For folders inside of res_path: Path(res_path)/"folder_name"')
-        print('To make new folder (if not exist): your_path.mkdir(parents=True, exist_ok=True)')
-
-    return dat_path, ks_path, csv_path, res_path      
+    return ks_path, csv_path, res_path, utils_path      
 
 
 def accumarray(spike_times_dict, sampling_rate=30000, bin_size_ms=300, step_size_ms=100):

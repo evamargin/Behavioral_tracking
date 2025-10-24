@@ -1,0 +1,60 @@
+name: motive-env
+channels:
+  - conda-forge
+channel_priority: strict
+
+dependencies:
+  - python=3.11
+  - pip
+
+  # Core runtime deps
+  - numpy=1.26
+  - scipy=1.14
+  - pandas=2.2
+  - scikit-learn
+  - xarray
+  - tqdm
+  - numba
+  - dill
+  - kneed
+  - jinja2
+  - pyts
+  - quantities
+
+  # Visualization
+  - matplotlib
+  - seaborn
+  - plotly
+  - holoviews
+  - panel
+  - hvplot
+  - param
+  - ipympl
+
+  # Notebook / interactivity
+  - ipykernel
+  - ipywidgets
+
+  # IO and data formats
+  - h5py
+  - pytables
+  - zarr
+  - openpyxl
+  - xmltodict
+
+  # Performance / parallel
+  - dask
+  - distributed
+  - pyfftw
+
+  # Signal processing
+  - scikit-image
+  - emd
+
+  # Build tools
+  - setuptools>=61.0
+  - wheel
+
+  # pip-only packages
+  - pip:
+      - ghostipy
